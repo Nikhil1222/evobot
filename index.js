@@ -4,7 +4,7 @@
 const { Client, Collection } = require("discord.js");
 const { readdirSync } = require("fs");
 const { join } = require("path");
-const { Nzc4MTg2ODk2OTk5NzEwNzIx.X7OVBg.5kjv8LRlf2j2XGsbkeEw6lfQM3Q, ! } = require("./util/EvobotUtil");
+const {   } = require("./util/EvobotUtil");
 
 const client = new Client({ disableMentions: "everyone" });
 
