@@ -8,7 +8,7 @@ const {   } = require("./util/EvobotUtil");
 
 const client = new Client({ disableMentions: "everyone" });
 
-client.Nzc4MTg2ODk2OTk5NzEwNzIx.X7OVBg.5kjv8LRlf2j2XGsbkeEw6lfQM3Q();
+client.login(Nzc4MTg2ODk2OTk5NzEwNzIx.X7OVBg.5kjv8LRlf2j2XGsbkeEw6lfQM3Q);
 client.commands = new Collection();
 client.prefix = !;
 client.queue = new Map();
