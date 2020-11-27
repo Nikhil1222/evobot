@@ -1,29 +1,34 @@
 const { MessageEmbed } = require("discord.js");
+const sendError = require("../util/error");
 
 module.exports = {
-  name: "queue",
-  cooldown: 60,
-  aliases: ["q"],
-  description: "Show the music queue and now playing.",
-  async execute(message) {
-    const permissions = message.channel.permissionsFor(message.client.user);
+  info: {
+    name: "queue",
+    description: "To show the server songs queue",
+    usage: "",
+    aliases: ["q", "list", "songlist", "song-list"],
+  },
+
+  run: async function (client, message, args) {
+ 
+  const permissions = message.channel.permissionsFor(message.client.user);
     if (!permissions.has(["MANAGE_MESSAGES", "ADD_REACTIONS"]))
-      return message.reply("Missing permission to manage messages or add reactions");
+      return sendError("Missing permission to manage messages or add reactions",message.channel);
 
     const queue = message.client.queue.get(message.guild.id);
-    if (!queue) return message.channel.send("❌ **Nothing playing in this server**");
+    if (!queue) return sendError("There is nothing playing in this server.",message.channel)
 
     let currentPage = 0;
     const embeds = generateQueueEmbed(message, queue.songs);
 
     const queueEmbed = await message.channel.send(
-      `**Current Page - ${currentPage + 1}/${embeds.length}**`,
+      `**\`${currentPage + 1}\`**/**${embeds.length}**`,
       embeds[currentPage]
     );
 
     try {
       await queueEmbed.react("⬅️");
-      await queueEmbed.react("⏹");
+      await queueEmbed.react("🛑");
       await queueEmbed.react("➡️");
     } catch (error) {
       console.error(error);
@@ -31,7 +36,7 @@ module.exports = {
     }
 
     const filter = (reaction, user) =>
-      ["⬅️", "⏹", "➡️"].includes(reaction.emoji.name) && message.author.id === user.id;
+      ["⬅️", "🛑", "➡️"].includes(reaction.emoji.name) && message.author.id === user.id;
     const collector = queueEmbed.createReactionCollector(filter, { time: 60000 });
 
     collector.on("collect", async (reaction, user) => {
@@ -39,12 +44,12 @@ module.exports = {
         if (reaction.emoji.name === "➡️") {
           if (currentPage < embeds.length - 1) {
             currentPage++;
-            queueEmbed.edit(`**Current Page - ${currentPage + 1}/${embeds.length}**`, embeds[currentPage]);
+            queueEmbed.edit(`**\`${currentPage + 1}\`**/**${embeds.length}**`, embeds[currentPage]);
           }
         } else if (reaction.emoji.name === "⬅️") {
           if (currentPage !== 0) {
             --currentPage;
-            queueEmbed.edit(`**Current Page - ${currentPage + 1}/${embeds.length}**`, embeds[currentPage]);
+            queueEmbed.edit(`**\`${currentPage + 1}\`**/**${embeds.length}**`, embeds[currentPage]);
           }
         } else {
           collector.stop();
@@ -68,16 +73,23 @@ function generateQueueEmbed(message, queue) {
     let j = i;
     k += 10;
 
-    const info = current.map((track) => `${++j} - [${track.title}](${track.url})`).join("\n");
-
+    const info = current.map((track) => `**\`${++j}\`** | [\`${track.title}\`](${track.url})`).join("\n");
+  
+    const serverQueue =message.client.queue.get(message.guild.id);
     const embed = new MessageEmbed()
-      .setTitle("Song Queue\n")
-      .setThumbnail(message.guild.iconURL())
-      .setColor("#F8AA2A")
-      .setDescription(`**Current Song - [${queue[0].title}](${queue[0].url})**\n\n${info}`)
-      .setTimestamp();
+     .setAuthor("Server Songs Queue", "https://raw.githubusercontent.com/SudhanPlayz/Discord-MusicBot/master/assets/Music.gif")
+    .setThumbnail(message.guild.iconURL())
+    .setColor("BLUE")
+    .setDescription(`${info}`)
+    .addField("Now Playing", `[${queue[0].title}](${queue[0].url})`, true)
+    .addField("Text Channel", serverQueue.textChannel, true)
+    .addField("Voice Channel", serverQueue.voiceChannel, true)
+    .setFooter("Currently Server Volume is "+serverQueue.volume)
+     if(serverQueue.songs.length === 1)embed.setDescription(`No songs to play next add songs by \`\`${message.client.config.prefix}play <song_name>\`\``)
+
     embeds.push(embed);
   }
 
   return embeds;
-}
+ 
+};

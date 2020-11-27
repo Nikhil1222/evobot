@@ -1,93 +1,68 @@
-const { play } = require("../include/play");
+const { Util, MessageEmbed } = require("discord.js");
 const ytdl = require("ytdl-core");
-const YouTubeAPI = require("simple-youtube-api");
-const scdl = require("soundcloud-downloader");
-const { YOUTUBE_API_KEY, SOUNDCLOUD_CLIENT_ID } = require("../util/EvobotUtil");
-const youtube = new YouTubeAPI(YOUTUBE_API_KEY);
+const ytdlDiscord = require("ytdl-core-discord");
+const yts = require("yt-search");
+const fs = require('fs');
+const sendError = require("../util/error")
 
 module.exports = {
-  name: "play",
-  cooldown: 3,
-  aliases: ["p"],
-  description: "Plays audio from YouTube or Soundcloud",
-  async execute(message, args) {
-    const { channel } = message.member.voice;
+  info: {
+    name: "play",
+    description: "To play songs :D",
+    usage: "<YouTube_URL> | <song_name>",
+    aliases: ["p"],
+  },
 
-    const serverQueue = message.client.queue.get(message.guild.id);
-    if (!channel) return message.reply("You need to join a voice channel first!").catch(console.error);
-    if (serverQueue && channel !== message.guild.me.voice.channel)
-      return message.reply(`You must be in the same channel as ${message.client.user}`).catch(console.error);
-
-    if (!args.length)
-      return message
-        .reply(`Usage: ${message.client.prefix}play <YouTube URL | Video Name | Soundcloud URL>`)
-        .catch(console.error);
+  run: async function (client, message, args) {
+    let channel = message.member.voice.channel;
+    if (!channel)return sendError("I'm sorry but you need to be in a voice channel to play music!", message.channel);
 
     const permissions = channel.permissionsFor(message.client.user);
-    if (!permissions.has("CONNECT"))
-      return message.reply("Cannot connect to voice channel, missing permissions");
-    if (!permissions.has("SPEAK"))
-      return message.reply("I cannot speak in this voice channel, make sure I have the proper permissions!");
+    if (!permissions.has("CONNECT"))return sendError("I cannot connect to your voice channel, make sure I have the proper permissions!", message.channel);
+    if (!permissions.has("SPEAK"))return sendError("I cannot speak in this voice channel, make sure I have the proper permissions!", message.channel);
 
-    const search = args.join(" ");
-    const videoPattern = /^(https?:\/\/)?(www\.)?(m\.)?(youtube\.com|youtu\.?be)\/.+$/gi;
-    const playlistPattern = /^.*(list=)([^#\&\?]*).*/gi;
-    const scRegex = /^https?:\/\/(soundcloud\.com)\/(.*)$/;
-    const url = args[0];
-    const urlValid = videoPattern.test(args[0]);
+    var searchString = args.join(" ");
+    if (!searchString)return sendError("You didn't poivide want i want to play", message.channel);
+   	const url = args[0] ? args[0].replace(/<(.+)>/g, "$1") : "";
+   var serverQueue = message.client.queue.get(message.guild.id);
 
-    // Start the playlist if playlist url was provided
-    if (!videoPattern.test(args[0]) && playlistPattern.test(args[0])) {
-      return message.client.commands.get("playlist").execute(message, args);
-    } else if (scdl.isValidUrl(url) && url.includes("/sets/")) {
-      return message.client.commands.get("playlist").execute(message, args);
-    }
-
-    const queueConstruct = {
-      textChannel: message.channel,
-      channel,
-      connection: null,
-      songs: [],
-      loop: false,
-      volume: 100,
-      playing: true
-    };
-
-    let songInfo = null;
+     let songInfo = null;
     let song = null;
+    if (url.match(/^(https?:\/\/)?(www\.)?(m\.)?(youtube\.com|youtu\.?be)\/.+$/gi)) {
+       try {
+          songInfo = await ytdl.getInfo(url)
+          if(!songInfo)return sendError("Looks like i was unable to find the song on YouTube", message.channel);
+        song = {
+       id: songInfo.videoDetails.videoId,
+       title: songInfo.videoDetails.title,
+       url: songInfo.videoDetails.video_url,
+       img: songInfo.player_response.videoDetails.thumbnail.thumbnails[0].url,
+      duration: songInfo.videoDetails.lengthSeconds,
+      ago: songInfo.videoDetails.publishDate,
+      views: String(songInfo.videoDetails.viewCount).padStart(10, ' '),
+      req: message.author
 
-    if (urlValid) {
-      try {
-        songInfo = await ytdl.getInfo(url);
-        song = {
-          title: songInfo.videoDetails.title,
-          url: songInfo.videoDetails.video_url,
-          duration: songInfo.videoDetails.lengthSeconds
         };
+
       } catch (error) {
         console.error(error);
         return message.reply(error.message).catch(console.error);
       }
-    } else if (scRegex.test(url)) {
+    }else {
       try {
-        const trackInfo = await scdl.getInfo(url, SOUNDCLOUD_CLIENT_ID);
+        var searched = await yts.search(searchString);
+    if(searched.videos.length === 0)return sendError("Looks like i was unable to find the song on YouTube", message.channel)
+    
+     songInfo = searched.videos[0]
         song = {
-          title: trackInfo.title,
-          url: trackInfo.permalink_url,
-          duration: Math.ceil(trackInfo.duration / 1000)
-        };
-      } catch (error) {
-        console.error(error);
-        return message.reply(error.message).catch(console.error);
-      }
-    } else {
-      try {
-        const results = await youtube.searchVideos(search, 1);
-        songInfo = await ytdl.getInfo(results[0].url);
-        song = {
-          title: songInfo.videoDetails.title,
-          url: songInfo.videoDetails.video_url,
-          duration: songInfo.videoDetails.lengthSeconds
+      id: songInfo.videoId,
+      title: Util.escapeMarkdown(songInfo.title),
+      views: String(songInfo.views).padStart(10, ' '),
+      url: songInfo.url,
+      ago: songInfo.ago,
+      duration: songInfo.duration.toString(),
+      img: songInfo.image,
+      req: message.author
         };
       } catch (error) {
         console.error(error);
@@ -97,23 +72,94 @@ module.exports = {
 
     if (serverQueue) {
       serverQueue.songs.push(song);
-      return serverQueue.textChannel
-        .send(`✅ **${song.title}** has been added to the queue by ${message.author}`)
-        .catch(console.error);
+      let thing = new MessageEmbed()
+      .setAuthor("Song has been added to queue", "https://raw.githubusercontent.com/SudhanPlayz/Discord-MusicBot/master/assets/Music.gif")
+      .setThumbnail(song.img)
+      .setColor("YELLOW")
+      .addField("Name", song.title, true)
+      .addField("Duration", song.duration, true)
+      .addField("Requested by", song.req.tag, true)
+      .setFooter(`Views: ${song.views} | ${song.ago}`)
+      return message.channel.send(thing);
     }
 
-    queueConstruct.songs.push(song);
+    const queueConstruct = {
+      textChannel: message.channel,
+      voiceChannel: channel,
+      connection: null,
+      songs: [],
+      volume: 80,
+      playing: true,
+      loop: false
+    };
     message.client.queue.set(message.guild.id, queueConstruct);
+    queueConstruct.songs.push(song);
+
+    const play = async (song) => {
+      const queue = message.client.queue.get(message.guild.id);
+    let afk = JSON.parse(fs.readFileSync("./afk.json", "utf8"));
+       if (!afk[message.guild.id]) afk[message.guild.id] = {
+        afk: false,
+    };
+    var online = afk[message.guild.id]
+    if (!song){
+      if (!online.afk) {
+        sendError("Leaving the voice channel because I think there are no songs in the queue. If you like the bot stay 24/7 in voice channel run `!afk`\n\nThank you for using my code! [GitHub](https://github.com/SudhanPlayz/Discord-MusicBot)", message.channel)
+        message.guild.me.voice.channel.leave();//If you want your bot stay in vc 24/7 remove this line :D
+        message.client.queue.delete(message.guild.id);
+      }
+            return message.client.queue.delete(message.guild.id);
+}
+  let stream = null;  
+    if (song.url.includes("youtube.com")) {
+      stream = await ytdl(song.url);
+      stream.on('error', err => {
+        if (queue) {
+        queue.songs.shift();
+        play(queue.songs[0]);
+      }
+      
+  	 sendError(`An unexpected error has occurred.\nPossible type \`${err}\``, message.channel)
+     return;
+});
+    }
+    queue.connection.on("disconnect", () => message.client.queue.delete(message.guild.id));
+
+      const dispatcher = queue.connection
+         .play(ytdl(song.url, {quality: 'highestaudio', highWaterMark: 1 << 25 ,type: "opus"}))
+         .on("finish", () => {
+           const shiffed = queue.songs.shift();
+            if (queue.loop === true) {
+                queue.songs.push(shiffed);
+            };
+          play(queue.songs[0])
+        })
+
+      dispatcher.setVolumeLogarithmic(queue.volume / 100);
+      let thing = new MessageEmbed()
+      .setAuthor("Started Playing Music!", "https://raw.githubusercontent.com/SudhanPlayz/Discord-MusicBot/master/assets/Music.gif")
+      .setThumbnail(song.img)
+      .setColor("BLUE")
+      .addField("Name", song.title, true)
+      .addField("Duration", song.duration, true)
+      .addField("Requested by", song.req.tag, true)
+      .setFooter(`Views: ${song.views} | ${song.ago}`)
+      queue.textChannel.send(thing);
+    };
 
     try {
-      queueConstruct.connection = await channel.join();
-      await queueConstruct.connection.voice.setSelfDeaf(true);
-      play(queueConstruct.songs[0], message);
+      const connection = await channel.join();
+      queueConstruct.connection = connection;
+      play(queueConstruct.songs[0]);
     } catch (error) {
-      console.error(error);
+      console.error(`I could not join the voice channel: ${error}`);
       message.client.queue.delete(message.guild.id);
       await channel.leave();
-      return message.channel.send(`Could not join the channel: ${error}`).catch(console.error);
+      return sendError(`I could not join the voice channel: ${error}`, message.channel);
     }
-  }
+  
+
+
+},
+
 };
